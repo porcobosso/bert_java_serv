@@ -4,6 +4,7 @@ import javax.annotation.PostConstruct;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.IntBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,7 +23,7 @@ public class Preprocessor {
      */
     @PostConstruct
     public void initVocab() throws IOException{
-        this.vocab = new HashMap<>();
+        this.vocab = new HashMap<String, Integer>();
         BufferedReader reader =new BufferedReader(new InputStreamReader(
                 Preprocessor.class.getResourceAsStream("/bert.vocab")
         ));
@@ -37,32 +38,46 @@ public class Preprocessor {
 
     /**
      * process one sentence
-     * @param isAnswer is the answer sentence(or seconded sentence)
+     * @param pair is sentence pair
      * @param t start index
-     * @param sampleIndex sample index
+     * @param maxLength max length
      * @param sentence sentence
      * @param inputIds input ids
      * @param inputMask input mask
      * @param segmentIds segment ids
      * @return current start index
      */
-    private int process(boolean isAnswer,int t, int sampleIndex, String sentence, int[][] inputIds, int[][] inputMask, int[][] segmentIds){
+    private int process(boolean pair, int t, int maxLength, String sentence, IntBuffer inputIds, IntBuffer inputMask, IntBuffer segmentIds){
+        boolean isAnswer = t!=0;
         if(!isAnswer){
-            // 不是第二句，才加上 CLS
-            inputIds[sampleIndex][t] = vocab.get(CLS);
-            inputMask[sampleIndex][t++] = 1;
+            // not first sentence, add CLS
+            inputIds.put(vocab.get(CLS));
+            inputMask.put(1);
+            segmentIds.put(0);
+            t++;
         }
         for(int j=0;j<sentence.length();j++){
             String c = String.valueOf(sentence.charAt(j));
             if(vocab.containsKey(c)){
-                inputIds[sampleIndex][t] = vocab.get(c);
-                if(isAnswer) segmentIds[sampleIndex][t] = 1;
-                inputMask[sampleIndex][t++] = 1;
+                inputIds.put(vocab.get(c));
+                segmentIds.put(isAnswer? 1:0);
+                inputMask.put(1);
+                t++;
             }
         }
-        inputIds[sampleIndex][t] = vocab.get(SEP);
-        if(isAnswer) segmentIds[sampleIndex][t] = 1;
-        inputMask[sampleIndex][t++] = 1;
+        inputIds.put(vocab.get(SEP));
+        segmentIds.put(isAnswer? 1:0);
+        inputMask.put(1);
+        t++;
+        if(!pair || isAnswer){
+            while(t<maxLength){
+                inputIds.put(0);
+                segmentIds.put(0);
+                inputMask.put(0);
+                t++;
+            }
+        }
+
         return t;
     }
 
@@ -74,15 +89,20 @@ public class Preprocessor {
      */
     public Input preprocess(String[] sentences, int maxLength){
         int sampleSize = sentences.length;
-        int[][] inputIds = new int[sampleSize][maxLength];
-        int[][] inputMask = new int[sampleSize][maxLength];
-        int[][] segmentIds = new int[sampleSize][maxLength];
+
+        // The create(Object) method call involves use of reflection to determine the shape and copy things over one array at a time,
+        // so it is pretty slow, especially as you add dimensions.
+        // The create(shape, FloatBuffer) method would be an order-of-magnitude faster
+        long[] shape = new long[]{sampleSize, maxLength};
+        IntBuffer inputIds = IntBuffer.allocate(sampleSize*maxLength);
+        IntBuffer inputMask = IntBuffer.allocate(sampleSize*maxLength);
+        IntBuffer segmentIds = IntBuffer.allocate(sampleSize*maxLength);
 
         for(int i=0;i<sampleSize;i++){
             String sentence = sentences[i];
-            process(false, 0 , i, sentence, inputIds, inputMask, segmentIds);
+            process(false, 0 , maxLength, sentence, inputIds, inputMask, segmentIds);
         }
-        return new Input(inputIds, inputMask, segmentIds);
+        return new Input(inputIds, inputMask, segmentIds, shape);
     }
 
 
@@ -95,17 +115,18 @@ public class Preprocessor {
      */
     public Input preprocess(String[] questions, String[] answers, int maxLength){
         int sampleSize = questions.length;
-        int[][] inputIds = new int[sampleSize][maxLength];
-        int[][] inputMask = new int[sampleSize][maxLength];
-        int[][] segmentIds = new int[sampleSize][maxLength];
+        long[] shape = new long[]{sampleSize, maxLength};
+        IntBuffer inputIds = IntBuffer.allocate(sampleSize*maxLength);
+        IntBuffer inputMask = IntBuffer.allocate(sampleSize*maxLength);
+        IntBuffer segmentIds = IntBuffer.allocate(sampleSize*maxLength);
 
         for(int i=0;i<sampleSize;i++){
             String question = questions[i];
             String answer = answers[i];
-            int t = process(false, 0 , i, question, inputIds, inputMask, segmentIds);
+            int t = process(true, 0 , maxLength, question, inputIds, inputMask, segmentIds);
             process(true, t , i, answer, inputIds, inputMask, segmentIds);
         }
 
-        return new Input(inputIds, inputMask, segmentIds);
+        return new Input(inputIds, inputMask, segmentIds, shape);
     }
 }

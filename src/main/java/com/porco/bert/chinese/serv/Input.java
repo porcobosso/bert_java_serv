@@ -2,6 +2,8 @@ package com.porco.bert.chinese.serv;
 
 import org.tensorflow.Tensor;
 
+import java.nio.IntBuffer;
+
 /**
  * bert model input
  */
@@ -21,10 +23,12 @@ public class Input {
 
     public Input(){}
 
-    public Input(int[][] inputIds, int[][] inputMask, int[][] segmentIds){
-        this.inputIds = tensor(inputIds);
-        this.inputMask = tensor(inputMask);
-        this.segmentIds = tensor(segmentIds);
+    public Input(IntBuffer inputIds,
+                 IntBuffer inputMask,
+                 IntBuffer segmentIds, long[] shape){
+        this.inputIds = tensor(inputIds, shape);
+        this.inputMask = tensor(inputMask, shape);
+        this.segmentIds = tensor(segmentIds, shape);
     }
 
     /**
@@ -32,7 +36,8 @@ public class Input {
      * @param input int array
      * @return tensor
      */
-    private Tensor tensor(int[][] input){
-        return Tensor.create(input, Integer.class);
+    private Tensor tensor(IntBuffer input, long[] shape){
+        input.flip();
+        return Tensor.create(shape, input);
     }
 }
