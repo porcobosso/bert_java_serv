@@ -124,7 +124,7 @@ public class Preprocessor {
             String question = questions[i];
             String answer = answers[i];
             int t = process(true, 0 , maxLength, question, inputIds, inputMask, segmentIds);
-            process(true, t , i, answer, inputIds, inputMask, segmentIds);
+            process(true, t , maxLength, answer, inputIds, inputMask, segmentIds);
         }
 
         return new Input(inputIds, inputMask, segmentIds, shape);
